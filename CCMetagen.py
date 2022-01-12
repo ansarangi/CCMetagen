@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
 CCMetagen main script
@@ -8,14 +8,13 @@ Created on Wed Jul 25 17:13:10 2018
 
 """
 
-version_numb = 'v1.4.0'
+version_numb = 'v1.2.5'
 
 # imports
 import sys
 import pandas as pd
 from argparse import ArgumentParser
 import subprocess
-import os
 from ete3 import NCBITaxa
 import re
 
@@ -79,10 +78,9 @@ parser.add_argument('-du', '--depth_unit', default = 'kma',
                     If you use the 'nc', 'rpm' or 'fr' options, remember to change the default --depth parameter accordingly.
                     Valid options are nc, rpm, fr and kma""", required=False)
 parser.add_argument('-map', '--mapstat', help="""Path to the mapstat file produced with KMA when using the -ef flag (.mapstat).
-                    Required when calculating abundances in RPM or in number of fragments, visualing the abundances in readCounts or readContAln
-                    for the krona graph or when producing the extended_output_file""", required = False)
+                    Required when calculating abundances in RPM or in number of fragments, or when producing the extended_output_file""", required = False)
 parser.add_argument('-d', '--depth', default = 0.2,
-                    help="""Minimum sequencing depth. Default = 0.2. The unit corresponds to the one used with --depth_unit
+                    help="""minimum sequencing depth. Default = 0.2. The unit corresponds to the one used with --depth_unit
                     If you use --depth_unit different from the default, change this accordingly.
                     """,type=float, required=False)
 parser.add_argument('-c', '--coverage', default = 20,
@@ -91,14 +89,6 @@ parser.add_argument('-q', '--query_identity', default = 50,
                     help='Minimum query identity (Phylum level). Default = 50', type=float, required=False)
 parser.add_argument('-p', '--pvalue', default = 0.05,
                     help='Minimum p-value. Default = 0.05.',type=float, required=False)
-parser.add_argument('-k', '--krona_mode', default = 'Depth',
-                    help="""Abundance measure for the Krona graph. Default = Depth. 
-                    Alternatively, you can choose readCount ('rc') or readCountAln ('rca').
-                    'rc' and 'rca' require a specified --mapstat file.
-                    """, required=False)                 
-parser.add_argument('-tax', '--local_taxfile', default = None,
-                    help='Use if a local taxdump file wants to be used. Default = None', required=False)
-
 
 # similarity thresholds:
 parser.add_argument('-st', '--species_threshold', default = 98.41,
@@ -130,11 +120,6 @@ d = args.depth
 p = args.pvalue
 mapstat = args.mapstat
 ef = args.extended_output_file
-k = args.krona_mode
-taxfile = args.local_taxfile
-if taxfile is not None and not os.path.isfile(taxfile):
-    raise ValueError("If used, the argument taxfile has to point to a taxdump file")
-
 
 # taxononomic thresholds:
 off = args.turn_off_sim_thresholds
@@ -177,18 +162,12 @@ else:
 #pt = 0
 #du = 'kma'
 #ef = 'y' # extended format - add a flag, default = 'n'
-#k = 'Depth'
 
 
 ##### Checks:
 
 # Run implicitly ete3.NCBITaxa.__init__() to check for valid taxonomy database
-#NCBITaxa()
-if taxfile is not None:
-    NCBITaxa(taxfile)
-else:
-    NCBITaxa()
-    
+NCBITaxa()
 
 # Warning if RefDatabase is unknown
 if ref_database not in ("UNITE", "RefSeq","nt"):
@@ -284,53 +263,9 @@ if (mode == 'text') or (mode == 'both'):
     print ("csv file saved as %s" %(out))
     print ("")
 
-##### Output a Krona file based on specified mode
+##### Output a Krona file
 if (mode == 'visual') or (mode == 'both'):
-    
-    # ReadCount (number of reads mapped to the template)
-    if (k == 'rc'):
-        if mapstat is not None:
-            print ("Extracting read count from mapstat file")
-            # load mapstat file if needed
-            if du == 'kma' or du == 'nc':
-                print(mapstat)
-                df_stats = pd.read_csv(mapstat, sep='\t', index_col=0, header = 6, encoding='latin1')
-                
-            df['readCount'] = df_stats['readCount']
-            krona_info = df[['readCount','Superkingdom','Kingdom','Phylum','Class','Order','Family','Genus','Species']]
-        else:
-            print("""Error, no mapstat file specified""")
-            print ("""To calculate the read count for this krona mode, you need to generate the mapstat file when
-               running KMA (flag -ef), and use it as input in CCMetagen (flag --mapstat).
-               """)
-            print ("")
-            
-    # ReadCountAln (number of reads aligned)
-    elif (k == 'rca'):
-        if mapstat is not None:
-            print ("Extracting read count alignment from mapstat file")
-             # load mapstat file if needed
-            if du == 'kma' or du == 'nc':
-                df_stats = pd.read_csv(mapstat, sep='\t', index_col=0, header = 6, encoding='latin1')
-            
-            df['readCountAln'] = df_stats['readCountAln']
-            krona_info = df[['readCountAln','Superkingdom','Kingdom','Phylum','Class','Order','Family','Genus','Species']]
-        else:
-            print("""Error, no mapstat file specified""")
-            print ("""To calculate the read count alignment for this krona mode, you need to generate the mapstat file when
-                   running KMA (flag -ef), and use it as input in CCMetagen (flag --mapstat).
-                   """)
-            print ("")
-
-    # Depth (default)
-    elif k == 'Depth':
-        krona_info = df[['Depth','Superkingdom','Kingdom','Phylum','Class','Order','Family','Genus','Species']]
-    
-    else:
-        print ("""Error: Invalid --krona_mode argument. 
-           Possible arguments: rc, rca, or Depth.""")
-        print ("")
-    
+    krona_info = df[['Depth','Superkingdom','Kingdom','Phylum','Class','Order','Family','Genus','Species']]
 
     # remove the unk_xx for better krona representation
     krona_info = krona_info.replace('unk_.*$', value = '',regex=True)
@@ -356,12 +291,11 @@ if ef == 'y':
     with open(mapstat) as mapfile:
         fragments_line=mapfile.readlines()[3]
     total_frags = re.split(r'(\t|\n)',fragments_line)[2]
-    total_reads = 2 * int(total_frags)
     df_stats = pd.read_csv(mapstat, sep='\t', index_col=0, header = 6, encoding='latin1')
     
     # delete species in df_stats that are not in the CCM result dataframe:
     df_stats_filt = df_stats[df_stats.index.isin(df.index)].copy() # the copy handles the pandas warning
-    df_stats_filt['perc_map'] = df_stats_filt['readCount'] / total_reads * 100
+    df_stats_filt['perc_map'] = df_stats_filt['fragmentCount'] / int(total_frags) * 100
     total_mapped = sum(df_stats_filt['perc_map'])
     
     stats_out = args.output_fp + "_stats.csv"
@@ -369,5 +303,11 @@ if ef == 'y':
     
     print ("\nStats file saved as %s" %(stats_out))
     print ("""\nProportion of reads mapped to the database: %f%%\n""" %(total_mapped))
+    
+
+
+
+
+
 
     
